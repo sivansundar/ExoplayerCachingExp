@@ -3,19 +3,22 @@ package com.c1ctech.exoplayercachingexp
 import android.net.Uri
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
-import com.google.android.exoplayer2.MediaItem
+import androidx.lifecycle.lifecycleScope
 import com.google.android.exoplayer2.Player
 import com.google.android.exoplayer2.SimpleExoPlayer
-import com.google.android.exoplayer2.source.DefaultMediaSourceFactory
-import com.google.android.exoplayer2.source.ProgressiveMediaSource
+import com.google.android.exoplayer2.offline.DownloaderConstructorHelper
+import com.google.android.exoplayer2.offline.StreamKey
+import com.google.android.exoplayer2.source.MediaSource
+import com.google.android.exoplayer2.source.hls.HlsMediaSource
+import com.google.android.exoplayer2.source.hls.offline.HlsDownloader
 import com.google.android.exoplayer2.ui.PlayerView
-import com.google.android.exoplayer2.upstream.DataSource
-import com.google.android.exoplayer2.upstream.DefaultDataSourceFactory
-import com.google.android.exoplayer2.upstream.DefaultHttpDataSource
-import com.google.android.exoplayer2.upstream.HttpDataSource
-import com.google.android.exoplayer2.upstream.cache.CacheDataSource
-import com.google.android.exoplayer2.upstream.cache.SimpleCache
+import com.google.android.exoplayer2.upstream.*
+import com.google.android.exoplayer2.upstream.cache.*
+import com.google.android.exoplayer2.util.Log
 import com.google.android.exoplayer2.util.Util
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 
 class MainActivity : AppCompatActivity() {
@@ -27,7 +30,8 @@ class MainActivity : AppCompatActivity() {
     private val simpleCache: SimpleCache = MyApp.simpleCache
 
     private lateinit var playerView: PlayerView
-    private val videoURL = "https://sample-videos.com/video123/mp4/720/big_buck_bunny_720p_1mb.mp4"
+    private val videoURL =
+        "https://multiplatform-f.akamaihd.net/i/multi/will/bunny/big_buck_bunny_,640x360_400,640x360_700,640x360_1000,950x540_1500,.f4v.csmil/master.m3u8"
 
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -40,28 +44,38 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun initPlayer() {
+        httpDataSourceFactory = DefaultHttpDataSourceFactory("Android")
 
-        httpDataSourceFactory = DefaultHttpDataSource.Factory()
-            .setAllowCrossProtocolRedirects(true)
+        httpDataSourceFactory.setDefaultRequestProperty("Cookie", "<REPLACE WITH COOKIE DATA>")
 
         defaultDataSourceFactory = DefaultDataSourceFactory(
             applicationContext, httpDataSourceFactory
         )
 
         //A DataSource that reads and writes a Cache.
-        cacheDataSourceFactory = CacheDataSource.Factory()
-            .setCache(simpleCache)
-            .setUpstreamDataSourceFactory(httpDataSourceFactory)
-            .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+        cacheDataSourceFactory =
+            CacheDataSourceFactory(
+                simpleCache,
+                httpDataSourceFactory,
+                FileDataSource.Factory(),
+                CacheDataSinkFactory(simpleCache, CacheDataSink.DEFAULT_FRAGMENT_SIZE),
+                CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR,
+                object : CacheDataSource.EventListener {
+                    override fun onCachedBytesRead(cacheSizeBytes: Long, cachedBytesRead: Long) {
+                        Log.d(
+                            "Cache",
+                            "onCachedBytesRead. cacheSizeBytes:$cacheSizeBytes, cachedBytesRead: $cachedBytesRead"
+                        )
+                    }
+
+                    override fun onCacheIgnored(reason: Int) {
+                        Log.d("Cache", "onCacheIgnored. reason:$reason")
+                    }
+                }
+            )
 
         // Create a player instance and set mediaSourceFactory.
-        simpleExoPlayer = SimpleExoPlayer.Builder(this)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(cacheDataSourceFactory)).build()
-
-        val videoUri = Uri.parse(videoURL)
-        val mediaItem = MediaItem.fromUri(videoUri)
-        val mediaSource =
-            ProgressiveMediaSource.Factory(cacheDataSourceFactory).createMediaSource(mediaItem)
+        simpleExoPlayer = SimpleExoPlayer.Builder(this).build()
 
         // Bind the player to the view.
         playerView.player = simpleExoPlayer
@@ -76,12 +90,78 @@ class MainActivity : AppCompatActivity() {
         simpleExoPlayer!!.repeatMode = Player.REPEAT_MODE_OFF
 
         // Set the media source to be played.
-        simpleExoPlayer!!.setMediaSource(mediaSource, true)
+        //simpleExoPlayer!!.setMediaSource(mediaSource, true)
 
         // Prepare the player.
-        simpleExoPlayer!!.prepare()
+        simpleExoPlayer!!.prepare(mediaSource)
+
+        lifecycleScope.launch(Dispatchers.IO) {
+            preCacheVideo()
+        }
     }
 
+    private val cacheStreamKeys = arrayListOf(
+        StreamKey(0, 1),
+        StreamKey(1, 1),
+        StreamKey(2, 1),
+        StreamKey(3, 1),
+        StreamKey(4, 1)
+    )
+
+    private val downloader by lazy {
+        HlsDownloader(
+            Uri.parse(videoURL),
+            cacheStreamKeys,
+            DownloaderConstructorHelper(
+                simpleCache,
+                httpDataSourceFactory,
+                cacheDataSourceFactory,
+                null,
+                null
+            )
+        )
+    }
+
+    private val mediaSource: MediaSource by lazy {
+        val dataSourceFactory = cacheDataSourceFactory
+        HlsMediaSource.Factory(dataSourceFactory)
+            .setStreamKeys(cacheStreamKeys)
+            .setAllowChunklessPreparation(true)
+            .createMediaSource(Uri.parse(videoURL))
+    }
+
+    private fun cancelPreCache() {
+        downloader.cancel()
+    }
+
+    private suspend fun preCacheVideo() = withContext(Dispatchers.IO) {
+        runCatching {
+            // do nothing if already cache enough
+
+            if (simpleCache.isCached(videoURL, 0, 5 * 1024 * 1024L)) {
+                Log.d("PreCache", "video has been cached, return")
+                return@runCatching
+            }
+
+            Log.d("PreCache", "start pre-caching")
+
+            downloader.download { contentLength, bytesDownloaded, percentDownloaded ->
+                if (bytesDownloaded >= 5 * 1024 * 1024L) downloader.cancel()
+                Log.d(
+                    "PreCache",
+                    "contentLength: $contentLength, bytesDownloaded: $bytesDownloaded, percentDownloaded: $percentDownloaded"
+                )
+            }
+        }.onFailure {
+            if (it is InterruptedException) return@onFailure
+
+            Log.d("TAG", "Cache fail for position:  with exception: $it}")
+            it.printStackTrace()
+        }.onSuccess {
+            Log.d("TAG", "Cache success")
+        }
+        Unit
+    }
 
     override fun onStart() {
         super.onStart()
@@ -120,3 +200,4 @@ class MainActivity : AppCompatActivity() {
         simpleExoPlayer = null
     }
 }
+
