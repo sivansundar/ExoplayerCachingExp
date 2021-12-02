@@ -5,7 +5,6 @@ import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
 import androidx.lifecycle.lifecycleScope
 import com.google.android.exoplayer2.DefaultRenderersFactory
-import com.google.android.exoplayer2.MediaItem
 import com.google.android.exoplayer2.Player
 import com.google.android.exoplayer2.SimpleExoPlayer
 import com.google.android.exoplayer2.offline.DownloadHelper
@@ -17,11 +16,10 @@ import com.google.android.exoplayer2.upstream.*
 import com.google.android.exoplayer2.upstream.cache.*
 import com.google.android.exoplayer2.util.Log
 import com.google.android.exoplayer2.util.Util
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withContext
 import java.io.IOException
+import android.R.string.no
+import com.google.android.exoplayer2.MediaItem
+import kotlinx.coroutines.*
 
 
 class MainActivity : AppCompatActivity() {
@@ -33,8 +31,9 @@ class MainActivity : AppCompatActivity() {
     private val simpleCache: SimpleCache = MyApp.simpleCache
 
     private lateinit var playerView: PlayerView
-    private val videoURL = "https://media.colearn.id/videos/transcoded/M0500101E001/hls/M0500101E001.m3u8"
     private var hlsDownloader : HlsDownloader? = null
+
+    private val videoURL =  "https://media.colearn.id/videos/transcoded/M0500101E001/hls/M0500101E001.m3u8"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -55,30 +54,32 @@ class MainActivity : AppCompatActivity() {
         )
 
 
-            val mediaItem = MediaItem.Builder().setUri(Uri.parse(videoURL)).setCustomCacheKey("custom_cache").build()
-            val hlsDownloadHelper = DownloadHelper.forMediaItem(this, mediaItem, DefaultRenderersFactory(this), httpDataSourceFactory)
+        val mediaItem = MediaItem.Builder().setUri(Uri.parse(videoURL)).setCustomCacheKey("custom_cache").build()
+        val hlsDownloadHelper = DownloadHelper.forMediaItem(this, mediaItem, DefaultRenderersFactory(this), httpDataSourceFactory)
 
             val prepareCallback = object : DownloadHelper.Callback {
                 override fun onPrepared(helper: DownloadHelper) {
 
                     Log.d("ExoCache", "onPrepare start")
                     if (cacheStreamKeys.isNotEmpty()) {
-                        val cacheDataSourceFactory = CacheDataSource.Factory()
-                            .setCache(simpleCache)
-                            .setUpstreamDataSourceFactory(
-                                defaultDataSourceFactory
-                            )
+//                        val cacheDataSourceFactory = CacheDataSource.Factory()
+//                            .setCache(simpleCache)
+//                            .setUpstreamDataSourceFactory(
+//                                defaultDataSourceFactory
+//                            )
 
                         // Create a downloader for the first variant in a master playlist.
-                         hlsDownloader = HlsDownloader(
-                             mediaItem,
-                            cacheDataSourceFactory
-                        )
+//                         hlsDownloader = HlsDownloader(
+//                             mediaItem,
+//                            cacheDataSourceFactory
+//                        )
                     }
 
                     runBlocking {
+
                         withContext(Dispatchers.IO) {
-                            hlsDownloader?.download { contentLength, bytesDownloaded, percentDownloaded ->
+                            downloader.download { contentLength, bytesDownloaded, percentDownloaded ->
+                            //    if (bytesDownloaded >= 50 * 1024L) downloader.cancel()
                                 Log.d("ExoCache", "Content length : $contentLength : Percentage downloaded $percentDownloaded % : Bytes Downloaded : $bytesDownloaded")
                             }
 
@@ -141,6 +142,17 @@ class MainActivity : AppCompatActivity() {
 
     }
 
+    private val downloader by lazy {
+        HlsDownloader(
+            MediaItem.Builder().setUri(Uri.parse(videoURL)).setCustomCacheKey("custom_cache").build(),
+            CacheDataSource.Factory()
+                .setCache(simpleCache)
+                .setUpstreamDataSourceFactory(
+                    defaultDataSourceFactory
+                )
+        )
+    }
+
     private val cacheStreamKeys = arrayListOf(
         StreamKey(0, 1),
         StreamKey(1, 1),
@@ -188,7 +200,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     companion object {
-        const val cookie = "CloudFront-Policy=eyJTdGF0ZW1lbnQiOlt7IlJlc291cmNlIjoiaHR0cHM6Ly9tZWRpYS5jb2xlYXJuLmlkLyoiLCJDb25kaXRpb24iOnsiRGF0ZUxlc3NUaGFuIjp7IkFXUzpFcG9jaFRpbWUiOjE2Mzg0MzUzOTB9fX1dfQ__; Domain=colearn.id; expires=Thu, 02 Dec 2021 08:56:30 GMT; HttpOnly; Max-Age=7200; Path=/; Secure;CloudFront-Signature=ZH9A1JxI301OaA~81XLnJAzs9OmOsN5opXy~XkCrdcfMl904sqOwTNhQUHi04Rml6vaQwNncZfW6N~atCTfSzHh5BrIXafGG4T0SpEHTQia7ix8H9r6XbgJ9WqN0mKSU9QK4WSnGx4U0AXFbWBUB~3b1E7A2ANRMx~CcPFxFWRFI4NSBoBLlPvGQPYgLW~pcPCI9zLYHGx1Dy-yMm7cyCzetZ58u3RH6qfjAHIonIiOjpq9F9p-mIf2CsqIE60LXKi2QusWbXM-5D~9llyigXmeY4vD09WxoQKa~arSgGHA-JNgkGw6AblyxTWQb6bf-U~boBsPIxiESA7366lcsBg__; Domain=colearn.id; expires=Thu, 02 Dec 2021 08:56:30 GMT; HttpOnly; Max-Age=7200; Path=/; Secure;CloudFront-Key-Pair-Id=APKAJ6DN7UYDXNJCVUWQ; Domain=colearn.id; expires=Thu, 02 Dec 2021 08:56:30 GMT; HttpOnly; Max-Age=7200; Path=/; Secure"
-    }
+        const val cookie = "CloudFront-Policy=eyJTdGF0ZW1lbnQiOlt7IlJlc291cmNlIjoiaHR0cHM6Ly9tZWRpYS5jb2xlYXJuLmlkLyoiLCJDb25kaXRpb24iOnsiRGF0ZUxlc3NUaGFuIjp7IkFXUzpFcG9jaFRpbWUiOjE2Mzg0Mzk5MzN9fX1dfQ__; Domain=colearn.id; expires=Thu, 02 Dec 2021 10:12:13 GMT; HttpOnly; Max-Age=7200; Path=/; Secure;CloudFront-Signature=Z-8KPjt-RW~qZL1n4PBA7917WtZW7GYh-iMjEy-8tGft2CA1hMHILX85IOJlk5czzItyfgezhl5cvHvp9HLasPJw3G8uyWISqsDyXU~QD9W618SZLwLJ4H~ZPaJA0YOsWhQV7qa-jXAno1kBlwZ9OA-lvQ2dAjH5JWM7PhgIVfJL-Hp2hdE~wItNrPTcF6G8Pbd1U1KJX66X1FDihWJLKNWDIWrOSo3clP5EILGcZcsxcbVzZSmbLrCnxHSEo6bN-GkHhk1vIlxaMXPc4TjjvMobd3hT29FTvDO9FBWPJN8-jT-oSZSAtvDV-IbZOUzQbGewZpolAtTZpYRSeetj5A__; Domain=colearn.id; expires=Thu, 02 Dec 2021 10:12:13 GMT; HttpOnly; Max-Age=7200; Path=/; Secure;CloudFront-Key-Pair-Id=APKAJ6DN7UYDXNJCVUWQ; Domain=colearn.id; expires=Thu, 02 Dec 2021 10:12:13 GMT; HttpOnly; Max-Age=7200; Path=/; Secure"    }
 }
 
