@@ -1,31 +1,10 @@
 package com.c1ctech.exoplayercachingexp
 
-import android.net.Uri
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
-import androidx.lifecycle.lifecycleScope
 import com.google.android.exoplayer2.*
-import com.google.android.exoplayer2.offline.DownloaderConstructorHelper
-import com.google.android.exoplayer2.offline.StreamKey
-import com.google.android.exoplayer2.source.MediaSource
-import com.google.android.exoplayer2.source.MediaSourceEventListener
-import com.google.android.exoplayer2.source.hls.HlsMediaSource
-import com.google.android.exoplayer2.source.hls.offline.HlsDownloader
-import com.google.android.exoplayer2.trackselection.AdaptiveTrackSelection
-import com.google.android.exoplayer2.trackselection.DefaultTrackSelector
-import com.google.android.exoplayer2.trackselection.TrackSelection
 import com.google.android.exoplayer2.ui.PlayerView
-import com.google.android.exoplayer2.upstream.*
-import com.google.android.exoplayer2.upstream.cache.*
-import com.google.android.exoplayer2.util.Log
 import com.google.android.exoplayer2.util.Util
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import com.google.android.exoplayer2.upstream.DefaultHttpDataSource
-
-import com.google.android.exoplayer2.upstream.cache.CacheDataSource
-import java.io.File
 
 
 class PlayerActivity : AppCompatActivity() {

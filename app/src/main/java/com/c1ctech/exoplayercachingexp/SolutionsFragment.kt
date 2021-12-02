@@ -1,26 +1,15 @@
 package com.c1ctech.exoplayercachingexp
 
 import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
 import androidx.fragment.app.Fragment
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import androidx.lifecycle.lifecycleScope
 import com.c1ctech.exoplayercachingexp.databinding.FragmentSolutionsBinding
-import com.google.android.exoplayer2.offline.DownloaderConstructorHelper
-import com.google.android.exoplayer2.offline.StreamKey
-import com.google.android.exoplayer2.source.hls.HlsMediaSource
-import com.google.android.exoplayer2.source.hls.offline.HlsDownloader
-import com.google.android.exoplayer2.upstream.DataSource
-import com.google.android.exoplayer2.upstream.FileDataSource
-import com.google.android.exoplayer2.upstream.HttpDataSource
-import com.google.android.exoplayer2.upstream.cache.*
-import com.google.android.exoplayer2.util.Log
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import com.google.android.exoplayer2.upstream.cache.NoOpCacheEvictor
+import com.google.android.exoplayer2.upstream.cache.SimpleCache
+
 
 // TODO: Rename parameter arguments, choose names that match
 // the fragment initialization parameters, e.g. ARG_ITEM_NUMBER
@@ -56,6 +45,10 @@ class SolutionsFragment : Fragment() {
     ): View? {
         // Inflate the layout for this fragment
         binding = FragmentSolutionsBinding.inflate(inflater, container, false)
+
+        //Should start caching from here
+        val downloadCache = SimpleCache(requireContext().cacheDir, NoOpCacheEvictor())
+
 
         binding.playButton.setOnClickListener {
             val intent = Intent(context, PlayerActivity::class.java)
