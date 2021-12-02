@@ -10,7 +10,7 @@ class MyApp : Application() {
 
     companion object {
         lateinit var simpleCache: SimpleCache
-        const val exoPlayerCacheSize: Long = 10 * 1024
+        const val exoPlayerCacheSize: Long = 50 * 1024L
         lateinit var leastRecentlyUsedCacheEvictor: LeastRecentlyUsedCacheEvictor
         lateinit var exoDatabaseProvider: ExoDatabaseProvider
     }
