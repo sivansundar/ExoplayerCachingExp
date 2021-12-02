@@ -4,8 +4,7 @@ import android.net.Uri
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
 import androidx.lifecycle.lifecycleScope
-import com.google.android.exoplayer2.Player
-import com.google.android.exoplayer2.SimpleExoPlayer
+import com.google.android.exoplayer2.*
 import com.google.android.exoplayer2.offline.DownloaderConstructorHelper
 import com.google.android.exoplayer2.offline.StreamKey
 import com.google.android.exoplayer2.source.MediaSource
@@ -23,16 +22,15 @@ import com.google.android.exoplayer2.util.Util
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.google.android.exoplayer2.upstream.DefaultHttpDataSource
+
+import com.google.android.exoplayer2.upstream.cache.CacheDataSource
+import java.io.File
 
 
 class PlayerActivity : AppCompatActivity() {
 
-    private var httpDataSourceFactory: HttpDataSource.Factory = MyApp.httpDataSourceFactory
-    private lateinit var defaultDataSourceFactory: DefaultDataSourceFactory
-    lateinit var cacheDataSourceFactory: DataSource.Factory
-
     private var simpleExoPlayer: SimpleExoPlayer? = null
-    private val simpleCache: SimpleCache = MyApp.simpleCache
 
     private lateinit var playerView: PlayerView
     private val videoURL =
@@ -47,76 +45,11 @@ class PlayerActivity : AppCompatActivity() {
 
     }
 
+
     private fun initPlayer() {
 
 
-        defaultDataSourceFactory = DefaultDataSourceFactory(
-            applicationContext, httpDataSourceFactory
-        )
-
-        //A DataSource that reads and writes a Cache.
-
-
-        val adaptiveTrackSelection: TrackSelection.Factory =
-            AdaptiveTrackSelection.Factory()
-
-        val defaultTrackSelector = DefaultTrackSelector(this, adaptiveTrackSelection)
-
-
-        // Create a player instance and set mediaSourceFactory.
-        simpleExoPlayer = SimpleExoPlayer.Builder(this).build()
-
-        // Bind the player to the view.
-        playerView.player = simpleExoPlayer
-
-        //setting exoplayer when it is ready.
-        simpleExoPlayer!!.playWhenReady = true
-
-        //Seeks to a position specified in milliseconds in the specified window.
-        simpleExoPlayer!!.seekTo(0, 0)
-
-        //set repeat mode.
-        simpleExoPlayer!!.repeatMode = Player.REPEAT_MODE_OFF
-
-        // Set the media source to be played.
-        //simpleExoPlayer!!.setMediaSource(mediaSource, true)
-
-        val httpDSFactory = DefaultHttpDataSourceFactory("Android")
-
-        cacheDataSourceFactory =
-            CacheDataSourceFactory(
-                MyApp.simpleCache,
-                MyApp.httpDataSourceFactory,
-                FileDataSource.Factory(),
-                CacheDataSinkFactory(MyApp.simpleCache, CacheDataSink.DEFAULT_FRAGMENT_SIZE),
-                CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR,
-                object : CacheDataSource.EventListener {
-                    override fun onCachedBytesRead(cacheSizeBytes: Long, cachedBytesRead: Long) {
-                        Log.d(
-                            "CR",
-                            "onCachedBytesRead. cacheSizeBytes:$cacheSizeBytes, cachedBytesRead: $cachedBytesRead"
-                        )
-                    }
-
-                    override fun onCacheIgnored(reason: Int) {
-                        Log.d("CR", "onCacheIgnored. reason:$reason")
-                    }
-                }
-            )
-
-        val dataSourceFactory = cacheDataSourceFactory
-
-        val mediaSource = HlsMediaSource.Factory(dataSourceFactory)
-            .setStreamKeys(MyApp.cacheStreamKeys)
-            .createMediaSource(Uri.parse(videoURL))
-
-        // Prepare the player.
-        simpleExoPlayer!!.prepare(mediaSource)
-
-
     }
-
-
 
 
     override fun onStart() {
@@ -162,7 +95,7 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     companion object {
-        const val cookieValue = ""
+
     }
 
 }

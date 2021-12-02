@@ -38,9 +38,6 @@ class SolutionsFragment : Fragment() {
     private var param2: String? = null
 
     lateinit var binding : FragmentSolutionsBinding
-    private val simpleCache: SimpleCache = MyApp.simpleCache
-    lateinit var cacheDataSourceFactory: DataSource.Factory
-    var httpDataSourceFactory: HttpDataSource.Factory = MyApp.httpDataSourceFactory
 
     private val videoURL = "https://media.colearn.id/videos/transcoded/M0500101E001/hls/M0500101E001.m3u8"
 
@@ -60,91 +57,12 @@ class SolutionsFragment : Fragment() {
         // Inflate the layout for this fragment
         binding = FragmentSolutionsBinding.inflate(inflater, container, false)
 
-
-        cacheDataSourceFactory =
-            CacheDataSourceFactory(
-                MyApp.simpleCache,
-                MyApp.httpDataSourceFactory,
-                FileDataSource.Factory(),
-                CacheDataSinkFactory(MyApp.simpleCache, CacheDataSink.DEFAULT_FRAGMENT_SIZE),
-                CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR,
-                object : CacheDataSource.EventListener {
-                    override fun onCachedBytesRead(cacheSizeBytes: Long, cachedBytesRead: Long) {
-                        Log.d(
-                            "CR",
-                            "onCachedBytesRead. cacheSizeBytes:$cacheSizeBytes, cachedBytesRead: $cachedBytesRead"
-                        )
-                    }
-
-                    override fun onCacheIgnored(reason: Int) {
-                        Log.d("CR", "onCacheIgnored. reason:$reason")
-                    }
-                }
-            )
-        lifecycleScope.launch(Dispatchers.IO) {
-            preCacheVideo()
-        }
-
         binding.playButton.setOnClickListener {
             val intent = Intent(context, PlayerActivity::class.java)
             startActivity(intent)
         }
 
         return binding.root
-    }
-
-
-
-    private val downloader by lazy {
-        HlsDownloader(
-            Uri.parse(videoURL),
-            MyApp.cacheStreamKeys,
-            DownloaderConstructorHelper(
-                simpleCache,
-                httpDataSourceFactory,
-                cacheDataSourceFactory,
-                null,
-                null
-            )
-
-        )
-    }
-
-    private fun cancelPreCache() {
-        downloader.cancel()
-    }
-
-    private fun removePreCache() {
-        downloader.remove()
-    }
-
-    private suspend fun preCacheVideo() = withContext(Dispatchers.IO) {
-        runCatching {
-            // do nothing if already cache enough
-
-            if (simpleCache.isCached(videoURL, 0, MyApp.exoPlayerCacheSize)) {
-                Log.d("PreCache", "video has been cached, return")
-                return@runCatching
-            }
-
-            Log.d("PreCache", "start pre-caching")
-
-            downloader.download { contentLength, bytesDownloaded, percentDownloaded ->
-                if (bytesDownloaded >= MyApp.exoPlayerCacheSize) downloader.cancel()
-                Log.d(
-                    "PreCache",
-                    "contentLength: $contentLength, bytesDownloaded: $bytesDownloaded, percentDownloaded: $percentDownloaded"
-                )
-            }
-        }.onFailure {
-            if (it is InterruptedException) return@onFailure
-
-            Log.d("PreCache", "Cache fail for position:  with exception: $it}")
-            it.printStackTrace()
-        }.onSuccess {
-            Log.d("PreCache", "Cache success")
-        }
-        Unit
     }
 
     companion object {
