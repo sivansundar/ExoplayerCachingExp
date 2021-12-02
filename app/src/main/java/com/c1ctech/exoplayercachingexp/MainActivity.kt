@@ -4,11 +4,12 @@ import android.net.Uri
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
 import androidx.lifecycle.lifecycleScope
+import com.google.android.exoplayer2.DefaultRenderersFactory
+import com.google.android.exoplayer2.MediaItem
 import com.google.android.exoplayer2.Player
 import com.google.android.exoplayer2.SimpleExoPlayer
-import com.google.android.exoplayer2.offline.DownloaderConstructorHelper
+import com.google.android.exoplayer2.offline.DownloadHelper
 import com.google.android.exoplayer2.offline.StreamKey
-import com.google.android.exoplayer2.source.MediaSource
 import com.google.android.exoplayer2.source.hls.HlsMediaSource
 import com.google.android.exoplayer2.source.hls.offline.HlsDownloader
 import com.google.android.exoplayer2.ui.PlayerView
@@ -18,7 +19,9 @@ import com.google.android.exoplayer2.util.Log
 import com.google.android.exoplayer2.util.Util
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import java.io.IOException
 
 
 class MainActivity : AppCompatActivity() {
@@ -30,9 +33,8 @@ class MainActivity : AppCompatActivity() {
     private val simpleCache: SimpleCache = MyApp.simpleCache
 
     private lateinit var playerView: PlayerView
-    private val videoURL =
-        "https://multiplatform-f.akamaihd.net/i/multi/will/bunny/big_buck_bunny_,640x360_400,640x360_700,640x360_1000,950x540_1500,.f4v.csmil/master.m3u8"
-
+    private val videoURL = "https://media.colearn.id/videos/transcoded/M0500101E001/hls/M0500101E001.m3u8"
+    private var hlsDownloader : HlsDownloader? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -44,35 +46,53 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun initPlayer() {
-        httpDataSourceFactory = DefaultHttpDataSourceFactory("Android")
 
-        httpDataSourceFactory.setDefaultRequestProperty("Cookie", "<REPLACE WITH COOKIE DATA>")
+        httpDataSourceFactory = DefaultHttpDataSource.Factory().setUserAgent("userAgent").setDefaultRequestProperties(
+            mapOf("Cookie" to cookie))
 
         defaultDataSourceFactory = DefaultDataSourceFactory(
             applicationContext, httpDataSourceFactory
         )
 
-        //A DataSource that reads and writes a Cache.
-        cacheDataSourceFactory =
-            CacheDataSourceFactory(
-                simpleCache,
-                httpDataSourceFactory,
-                FileDataSource.Factory(),
-                CacheDataSinkFactory(simpleCache, CacheDataSink.DEFAULT_FRAGMENT_SIZE),
-                CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR,
-                object : CacheDataSource.EventListener {
-                    override fun onCachedBytesRead(cacheSizeBytes: Long, cachedBytesRead: Long) {
-                        Log.d(
-                            "Cache",
-                            "onCachedBytesRead. cacheSizeBytes:$cacheSizeBytes, cachedBytesRead: $cachedBytesRead"
+
+            val mediaItem = MediaItem.Builder().setUri(Uri.parse(videoURL)).setCustomCacheKey("custom_cache").build()
+            val hlsDownloadHelper = DownloadHelper.forMediaItem(this, mediaItem, DefaultRenderersFactory(this), httpDataSourceFactory)
+
+            val prepareCallback = object : DownloadHelper.Callback {
+                override fun onPrepared(helper: DownloadHelper) {
+
+                    Log.d("ExoCache", "onPrepare start")
+                    if (cacheStreamKeys.isNotEmpty()) {
+                        val cacheDataSourceFactory = CacheDataSource.Factory()
+                            .setCache(simpleCache)
+                            .setUpstreamDataSourceFactory(
+                                defaultDataSourceFactory
+                            )
+
+                        // Create a downloader for the first variant in a master playlist.
+                         hlsDownloader = HlsDownloader(
+                             mediaItem,
+                            cacheDataSourceFactory
                         )
                     }
 
-                    override fun onCacheIgnored(reason: Int) {
-                        Log.d("Cache", "onCacheIgnored. reason:$reason")
+                    runBlocking {
+                        withContext(Dispatchers.IO) {
+                            hlsDownloader?.download { contentLength, bytesDownloaded, percentDownloaded ->
+                                Log.d("ExoCache", "Content length : $contentLength : Percentage downloaded $percentDownloaded % : Bytes Downloaded : $bytesDownloaded")
+                            }
+
+                        }
                     }
                 }
-            )
+                override fun onPrepareError(helper: DownloadHelper, e: IOException) {
+                    Log.d("ExoCache", "ERROR : $e")
+                }
+
+            }
+
+
+
 
         // Create a player instance and set mediaSourceFactory.
         simpleExoPlayer = SimpleExoPlayer.Builder(this).build()
@@ -89,15 +109,36 @@ class MainActivity : AppCompatActivity() {
         //set repeat mode.
         simpleExoPlayer!!.repeatMode = Player.REPEAT_MODE_OFF
 
-        // Set the media source to be played.
-        //simpleExoPlayer!!.setMediaSource(mediaSource, true)
+        val cacheDataSourceFactory = simpleCache.let {
+            CacheDataSource.Factory()
+                .setCache(it)
+                .setUpstreamDataSourceFactory(defaultDataSourceFactory)
+                .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+                .setEventListener(object : CacheDataSource.EventListener{
+                    override fun onCachedBytesRead(cacheSizeBytes: Long, cachedBytesRead: Long) {
+                        Log.d("Cache", "Cache bytes read : $cachedBytesRead : cacheSizeBytes : $cacheSizeBytes" )
+                    }
 
-        // Prepare the player.
-        simpleExoPlayer!!.prepare(mediaSource)
+                    override fun onCacheIgnored(reason: Int) {
+                        Log.d("Cache", "Ignored : $reason" )
+                    }
 
-        lifecycleScope.launch(Dispatchers.IO) {
-            preCacheVideo()
+                })
+
         }
+
+
+        val mediaSource = HlsMediaSource.Factory(cacheDataSourceFactory)
+            .createMediaSource(mediaItem)
+
+        simpleExoPlayer!!.addMediaSource(mediaSource)
+        simpleExoPlayer!!.prepare()
+
+
+        lifecycleScope.launch(Dispatchers.IO){
+            hlsDownloadHelper.prepare(prepareCallback)
+        }
+
     }
 
     private val cacheStreamKeys = arrayListOf(
@@ -108,60 +149,6 @@ class MainActivity : AppCompatActivity() {
         StreamKey(4, 1)
     )
 
-    private val downloader by lazy {
-        HlsDownloader(
-            Uri.parse(videoURL),
-            cacheStreamKeys,
-            DownloaderConstructorHelper(
-                simpleCache,
-                httpDataSourceFactory,
-                cacheDataSourceFactory,
-                null,
-                null
-            )
-        )
-    }
-
-    private val mediaSource: MediaSource by lazy {
-        val dataSourceFactory = cacheDataSourceFactory
-        HlsMediaSource.Factory(dataSourceFactory)
-            .setStreamKeys(cacheStreamKeys)
-            .setAllowChunklessPreparation(true)
-            .createMediaSource(Uri.parse(videoURL))
-    }
-
-    private fun cancelPreCache() {
-        downloader.cancel()
-    }
-
-    private suspend fun preCacheVideo() = withContext(Dispatchers.IO) {
-        runCatching {
-            // do nothing if already cache enough
-
-            if (simpleCache.isCached(videoURL, 0, 5 * 1024 * 1024L)) {
-                Log.d("PreCache", "video has been cached, return")
-                return@runCatching
-            }
-
-            Log.d("PreCache", "start pre-caching")
-
-            downloader.download { contentLength, bytesDownloaded, percentDownloaded ->
-                if (bytesDownloaded >= 5 * 1024 * 1024L) downloader.cancel()
-                Log.d(
-                    "PreCache",
-                    "contentLength: $contentLength, bytesDownloaded: $bytesDownloaded, percentDownloaded: $percentDownloaded"
-                )
-            }
-        }.onFailure {
-            if (it is InterruptedException) return@onFailure
-
-            Log.d("TAG", "Cache fail for position:  with exception: $it}")
-            it.printStackTrace()
-        }.onSuccess {
-            Log.d("TAG", "Cache success")
-        }
-        Unit
-    }
 
     override fun onStart() {
         super.onStart()
@@ -198,6 +185,10 @@ class MainActivity : AppCompatActivity() {
         //release player when done
         simpleExoPlayer!!.release()
         simpleExoPlayer = null
+    }
+
+    companion object {
+        const val cookie = "CloudFront-Policy=eyJTdGF0ZW1lbnQiOlt7IlJlc291cmNlIjoiaHR0cHM6Ly9tZWRpYS5jb2xlYXJuLmlkLyoiLCJDb25kaXRpb24iOnsiRGF0ZUxlc3NUaGFuIjp7IkFXUzpFcG9jaFRpbWUiOjE2Mzg0MzUzOTB9fX1dfQ__; Domain=colearn.id; expires=Thu, 02 Dec 2021 08:56:30 GMT; HttpOnly; Max-Age=7200; Path=/; Secure;CloudFront-Signature=ZH9A1JxI301OaA~81XLnJAzs9OmOsN5opXy~XkCrdcfMl904sqOwTNhQUHi04Rml6vaQwNncZfW6N~atCTfSzHh5BrIXafGG4T0SpEHTQia7ix8H9r6XbgJ9WqN0mKSU9QK4WSnGx4U0AXFbWBUB~3b1E7A2ANRMx~CcPFxFWRFI4NSBoBLlPvGQPYgLW~pcPCI9zLYHGx1Dy-yMm7cyCzetZ58u3RH6qfjAHIonIiOjpq9F9p-mIf2CsqIE60LXKi2QusWbXM-5D~9llyigXmeY4vD09WxoQKa~arSgGHA-JNgkGw6AblyxTWQb6bf-U~boBsPIxiESA7366lcsBg__; Domain=colearn.id; expires=Thu, 02 Dec 2021 08:56:30 GMT; HttpOnly; Max-Age=7200; Path=/; Secure;CloudFront-Key-Pair-Id=APKAJ6DN7UYDXNJCVUWQ; Domain=colearn.id; expires=Thu, 02 Dec 2021 08:56:30 GMT; HttpOnly; Max-Age=7200; Path=/; Secure"
     }
 }
 
